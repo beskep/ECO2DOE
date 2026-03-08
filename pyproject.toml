@@ -1,0 +1,59 @@
+[project]
+name            = "eco2doe"
+version         = "0.1.0"
+description     = "ECO2DOE"
+readme          = "README.md"
+requires-python = ">=3.13"
+authors         = [{ name = "beskep", email = "beskep@naver.com" }]
+dependencies    = [
+  "eco2",
+  "fastexcel>=0.19.0",
+  "polars>=1.38.1",
+]
+
+[project.scripts]
+eco2doe = "eco2doe:main"
+
+[dependency-groups]
+dev = [
+  "ruff>=0.15.5",
+  "ty>=0.0.21",
+]
+
+[build-system]
+requires      = ["uv_build>=0.10.8,<0.11.0"]
+build-backend = "uv_build"
+
+[tool.mypy]
+disable_error_code  = ["import-untyped", "import", "var-annotated"]
+check_untyped_defs  = true
+warn_unused_ignores = true
+warn_unused_configs = true
+
+[tool.ruff]
+preview           = true
+respect-gitignore = false
+output-format     = "concise"
+
+[tool.ruff.format]
+quote-style           = "single"
+docstring-code-format = true
+
+[tool.ruff.lint]
+select             = ["ALL"]
+ignore             = ["COM812", "CPY", "D", "FIX", "Q", "S"]
+future-annotations = true
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.tombi.format.rules]
+key-value-equals-sign-alignment = true
+line-width                      = 120
+trailing-comment-alignment      = true
+
+[tool.ty.terminal]
+output-format = "concise"
+
+[tool.uv.sources]
+eco2 = { git = "https://github.com/beskep/ECO2" }
