@@ -1,0 +1,123 @@
+import dataclasses as dc
+import functools
+import itertools
+from pathlib import Path
+
+import msgspec
+import polars as pl
+
+SCALE_FACTORS: tuple[float, ...] = (1.3, 1.2, 1.1, 0.9, 0.8, 0.7)
+
+
+@dc.dataclass(frozen=True)
+class Variables:
+    application_number: str = '신청번호'
+
+    u_wall: str = '외벽 평균 열관류율'
+    u_roof: str = '지붕 평균 열관류율'
+    u_floor: str = '바닥 평균 열관류율_직접'
+    u_window: str = '창호 평균 열관류율'
+    shgc: str = 'SHGC 평균'
+
+    boiler_efficiency: str = '온열설비 효율_보일러'
+    ehp_cop_heating: str = '온열설비 효율_히트펌프 전기'
+    ghp_cop_heating: str = '온열설비 효율_히트펌프 가스'
+    ehp_cop_cooling: str = '냉열설비 효율_압축식'
+    ghp_cop_cooling: str = '냉열설비 효율_압축식(LNG)'
+    absorption_efficiency: str = '냉열설비 효율_흡수식(없음)'
+    boiler_water_efficiency: str = '급탕설비 효율_보일러'
+    light_density: str = '평균 조명밀도'
+    heat_recovery_heating: str = '평균열회수율_전열교환기'
+    heat_recovery_colling: str = '평균열회수율냉_전열교환기'
+
+    @classmethod
+    def create(cls, conf: dict | str | Path | None = 'conf.toml'):
+        if conf is None:
+            return cls()
+
+        data = (
+            conf
+            if isinstance(conf, dict)
+            else msgspec.toml.decode(Path(conf).read_bytes())['variable']
+        )
+        return cls(**data)
+
+    @classmethod
+    def count(cls):
+        return len(dc.fields(cls)) - 1
+
+    def numerics(self):
+        return tuple(x for x in dc.astuple(self) if x != self.application_number)
+
+
+@dc.dataclass(frozen=True)
+class Case:
+    application_number: int
+    variable: str
+
+    scale_factor: float
+    reference: float
+    adjusted: float  # scale_factor * reference
+
+
+@dc.dataclass(frozen=True)
+class Design:
+    var: Variables
+    design: pl.DataFrame
+
+    scale_factors: tuple[float, ...] = SCALE_FACTORS
+
+    @classmethod
+    def create(cls, conf: str | Path = 'conf.toml'):
+        c = msgspec.toml.decode(Path(conf).read_bytes())
+        var = Variables.create(c['variable'])
+        design = pl.read_excel(
+            c['design']['design'],
+            read_options={'header_row': 1},
+            columns=dc.astuple(var),
+        )
+        if not design[var.application_number].is_unique().all():
+            msg = '신청번호 중복'
+            raise ValueError(msg)
+
+        return cls(
+            var=var,
+            design=design,
+            scale_factors=c['design'].get('scale_factors', SCALE_FACTORS),
+        )
+
+    @functools.cached_property
+    def count(self):
+        return self.var.count() * self.design.height * len(self.scale_factors)
+
+    def iter(self):
+        indices = self.design[self.var.application_number].to_list()
+        app_number = pl.col(self.var.application_number)
+
+        for idx in indices:
+            row = self.design.row(by_predicate=app_number == idx, named=True)
+
+            for var, factor in itertools.product(
+                self.var.numerics(), self.scale_factors
+            ):
+                reference = row[var]
+                adjusted = reference * factor
+                yield Case(
+                    application_number=idx,
+                    variable=var,
+                    scale_factor=factor,
+                    reference=reference,
+                    adjusted=adjusted,
+                )
+
+
+if __name__ == '__main__':
+    import rich
+
+    console = rich.get_console()
+
+    design = Design.create()
+    console.print(design)
+
+    for case, _ in zip(design.iter(), range(10), strict=False):
+        console.print(case)
