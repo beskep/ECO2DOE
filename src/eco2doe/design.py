@@ -2,34 +2,11 @@ import dataclasses as dc
 import functools
 import itertools
 import tomllib
-from collections.abc import Iterable
 from pathlib import Path
 
-import more_itertools as mi
 import polars as pl
 
-Source = str | Path | Iterable[str | Path]
-
 SCALE_FACTORS: tuple[float, ...] = (1.3, 1.2, 1.1, 0.9, 0.8, 0.7)
-
-
-def _deep_merge(d1: dict, d2: dict) -> dict:
-    r = d1.copy()
-    for key, value in d2.items():
-        if key in r and isinstance(r[key], dict) and isinstance(value, dict):
-            r[key] = _deep_merge(r[key], value)
-        else:
-            r[key] = value
-    return r
-
-
-def _read_config(source: Source):
-    conf = {}
-    for src in mi.always_iterable(source):
-        c = tomllib.loads(Path(src).read_text('UTF-8'))
-        conf = _deep_merge(conf, c)
-
-    return conf
 
 
 @dc.dataclass(frozen=True)
@@ -74,39 +51,39 @@ class Case:
 @dc.dataclass(frozen=True)
 class Design:
     var: Variables
-    design: pl.DataFrame
+    models: pl.DataFrame
 
     scale_factors: tuple[float, ...] = SCALE_FACTORS
 
     @classmethod
-    def create(cls, conf: Source = ('conf.toml', '.conf.toml')):
-        c = _read_config(conf)
+    def create(cls, cases: str | Path, conf: str | Path = 'design.toml'):
+        c = tomllib.loads(Path(conf).read_text('UTF-8'))
         var = Variables(**c['variable'])
-        design = pl.read_excel(
-            c['design']['design'],
+        models = pl.read_excel(
+            cases,
             read_options={'header_row': 1},
             columns=dc.astuple(var),
         )
-        if not design[var.application_number].is_unique().all():
+        if not models[var.application_number].is_unique().all():
             msg = '신청번호 중복'
             raise ValueError(msg)
 
         return cls(
             var=var,
-            design=design,
-            scale_factors=c['design'].get('scale_factors', SCALE_FACTORS),
+            models=models,
+            scale_factors=c.get('scale_factors', SCALE_FACTORS),
         )
 
     @functools.cached_property
     def count(self):
-        return self.var.count() * self.design.height * len(self.scale_factors)
+        return self.var.count() * self.models.height * len(self.scale_factors)
 
     def iter(self):
-        indices = self.design[self.var.application_number].to_list()
+        indices = self.models[self.var.application_number].to_list()
         app_number = pl.col(self.var.application_number)
 
         for idx in indices:
-            row = self.design.row(by_predicate=app_number == idx, named=True)
+            row = self.models.row(by_predicate=app_number == idx, named=True)
 
             for var, factor in itertools.product(
                 self.var.numerics(), self.scale_factors
@@ -123,12 +100,21 @@ class Design:
 
 
 if __name__ == '__main__':
+    import cyclopts
     import rich
 
     console = rich.get_console()
+    app = cyclopts.App(
+        config=cyclopts.config.Toml('conf.toml', allow_unknown=True),  # ty:ignore[invalid-argument-type]
+        console=console,
+    )
 
-    design = Design.create()
-    console.print(design)
+    @app.default
+    def main(cases: Path):
+        design = Design.create(cases=cases)
+        console.print(design)
 
-    for case, _ in zip(design.iter(), range(10), strict=False):
-        console.print(case)
+        for case, _ in zip(design.iter(), range(10), strict=False):
+            console.print(case)
+
+    app()
