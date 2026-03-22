@@ -1,12 +1,35 @@
 import dataclasses as dc
 import functools
 import itertools
+import tomllib
+from collections.abc import Iterable
 from pathlib import Path
 
-import msgspec
+import more_itertools as mi
 import polars as pl
 
+Source = str | Path | Iterable[str | Path]
+
 SCALE_FACTORS: tuple[float, ...] = (1.3, 1.2, 1.1, 0.9, 0.8, 0.7)
+
+
+def _deep_merge(d1: dict, d2: dict) -> dict:
+    r = d1.copy()
+    for key, value in d2.items():
+        if key in r and isinstance(r[key], dict) and isinstance(value, dict):
+            r[key] = _deep_merge(r[key], value)
+        else:
+            r[key] = value
+    return r
+
+
+def _read_config(source: Source):
+    conf = {}
+    for src in mi.always_iterable(source):
+        c = tomllib.loads(Path(src).read_text('UTF-8'))
+        conf = _deep_merge(conf, c)
+
+    return conf
 
 
 @dc.dataclass(frozen=True)
@@ -29,18 +52,6 @@ class Variables:
     light_density: str = '평균 조명밀도'
     heat_recovery_heating: str = '평균열회수율_전열교환기'
     heat_recovery_colling: str = '평균열회수율냉_전열교환기'
-
-    @classmethod
-    def create(cls, conf: dict | str | Path | None = 'conf.toml'):
-        if conf is None:
-            return cls()
-
-        data = (
-            conf
-            if isinstance(conf, dict)
-            else msgspec.toml.decode(Path(conf).read_bytes())['variable']
-        )
-        return cls(**data)
 
     @classmethod
     def count(cls):
@@ -68,9 +79,9 @@ class Design:
     scale_factors: tuple[float, ...] = SCALE_FACTORS
 
     @classmethod
-    def create(cls, conf: str | Path = 'conf.toml'):
-        c = msgspec.toml.decode(Path(conf).read_bytes())
-        var = Variables.create(c['variable'])
+    def create(cls, conf: Source = ('conf.toml', '.conf.toml')):
+        c = _read_config(conf)
+        var = Variables(**c['variable'])
         design = pl.read_excel(
             c['design']['design'],
             read_options={'header_row': 1},
