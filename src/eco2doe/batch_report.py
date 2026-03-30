@@ -40,6 +40,11 @@ class BatchReport:
     source: str | Path
     _metadata: str | Path | pl.DataFrame = METADATA
 
+    _: dc.KW_ONLY
+
+    infer_schema_length: int | None = 10000
+    kwargs: dict = dc.field(default_factory=dict)
+
     @functools.cached_property
     def metadata(self):
         return (
@@ -50,7 +55,13 @@ class BatchReport:
 
     @functools.cached_property
     def wide_data(self):
-        data = pl.read_csv(self.source, separator='\t', has_header=False)
+        data = pl.read_csv(
+            self.source,
+            separator='\t',
+            has_header=False,
+            infer_schema_length=self.infer_schema_length,
+            **self.kwargs,
+        )
         cols = ['case_name', *self.metadata['variable'].to_list()]
 
         if len(cols) < data.width:
