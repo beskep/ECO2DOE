@@ -163,14 +163,27 @@ def _find_model(path: Path, app_number: int):
 @app.command
 @dc.dataclass(frozen=True)
 class Edit:
+    """ECO2 수정"""
+
     src: Path
+    """원본 ECO2 파일이 저장된 폴더"""
+
     dst: Path
+    """수정한 ECO2 파일을 저장할 폴더"""
+
     cases: Path
+    """케이스 설정 엑셀"""
+
+    _: dc.KW_ONLY
 
     batch: bool = True
     """건물(Application Number)별로 폴더 구분"""
 
+    ext: Literal['tpl', 'tplx'] = 'tplx'
+    """저장 파일 확장자"""
+
     skip_zero: bool = True
+    """Reference가 0이면 건너뛰기"""
 
     @functools.cached_property
     def design(self):
@@ -188,7 +201,7 @@ class Edit:
 
     def _dst(self, case: Case, idx: int, width: int):
         d = self._eco2 / f'{case.application_number}' if self.batch else self._eco2
-        return d / f'{idx:0{width}d}.{case.name()}.tplx'
+        return d / f'{idx:0{width}d}.{case.name()}.{self.ext}'
 
     def __call__(self):
         self.dst.mkdir(exist_ok=True)
@@ -218,6 +231,8 @@ class Edit:
 @app.command
 @dc.dataclass(frozen=True)
 class Report:
+    """ECO2 일괄 계산 결과 해석"""
+
     dst: Path
 
     @functools.cached_property
