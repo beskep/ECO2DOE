@@ -7,8 +7,7 @@ import cyclopts
 import more_itertools as mi
 import polars as pl
 import structlog
-from eco2 import editor
-from rich.progress import track
+from eco2 import editor, utils
 
 from eco2doe import batch_report
 from eco2doe.design import Design
@@ -212,12 +211,13 @@ class Edit:
         cases.write_excel(self.dst / 'cases.xlsx', column_widths=150)
         cases.write_parquet(self.dst / 'cases.parquet')
 
-        width = max(4, len(str(self.design.count)))
-        for idx, case in enumerate(track(self.design.iter(), total=self.design.count)):
+        total = self.design.count
+        width = max(4, len(str(total)))
+        for idx, case in enumerate(utils.track(self.design.iter(), total=total)):
             if self.skip_zero and case.reference == 0:
                 continue
 
-            logger.info('%04d. %s', idx, case)
+            logger.info(repr(case))
 
             src = _find_model(self.src, case.application_number)
             editor = Editor(
@@ -313,4 +313,5 @@ class Report:
 
 
 if __name__ == '__main__':
+    utils.setup_logger()
     app()
