@@ -150,9 +150,9 @@ class Editor(editor.Eco2Editor):
         power = AHU_POWER.get(self.case.variable, 'NOT_FAN')
 
         indices = {
-            zone.findtext('공조난방생산기기', 'NOT_FOUND')
+            zone.findtext('냉난방공조처리시스템', 'NOT_FOUND')
             for zone in self._iter('tbl_zone')
-            if _is_ahu_target(zone)
+            if zone.findtext('code') != '0' and _is_ahu_target(zone)
         }
         indices.discard('0')
 
